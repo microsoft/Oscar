@@ -1,0 +1,6 @@
+[submodule "transformers"]
+	path = transformers
+	url = git@github.com:huggingface/transformers.git
+[submodule "coco_caption"]
+	path = coco_caption
+	url = git@github.com:LuoweiZhou/coco-caption.git
