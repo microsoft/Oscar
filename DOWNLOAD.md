@@ -26,10 +26,13 @@ The object tags are from:
 
 ### Note
 It is recommended to download large files with **AzCopy** for faster speed.
-AzCopy executable can be downloaded [here](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10#download-azcopy).
+AzCopy executable tools can be downloaded [here](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10#download-azcopy).
 Decompress the tar file and put the executable in any path. To download from
 any URL above, the command is:
 ```bash
 path/to/azcopy copy <URL> <local_path>
+
+# for example, downloading coco_caption.zip
+path/to/azcopy copy https://biglmdiag.blob.core.windows.net/oscar/pretrained_models/coco_caption.zip <local_path>
 ```
 
