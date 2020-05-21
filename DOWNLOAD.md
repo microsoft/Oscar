@@ -1,4 +1,5 @@
 # Download
+
 ## Datasets
 We provide the extracted image region features, object tags, and the original text annotations for each downstream tasks.
 ```bash
@@ -21,3 +22,14 @@ The object tags are from:
     1) the same VisualGenome model, named as `-vg-labels`. Or,
     2) the model trained on object annotations from [Open Images V5](https://storage.googleapis.com/openimages/web/index.html). named as `-oid-labels`. Or,
     3) no object tags provied, serving as baseline, named as `-no-labels`.
+
+
+### Note
+It is recommended to download large files with **AzCopy** for faster speed.
+AzCopy executable can be downloaded [here](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10#download-azcopy).
+Decompress the tar file and put the executable in any path. To download from
+any URL above, the command is:
+```bash
+path/to/azcopy copy <URL> <local_path>
+```
+
