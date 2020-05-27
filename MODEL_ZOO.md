@@ -47,7 +47,7 @@ Large model is trained on train+val split and evaluated on the val split, for re
 
 Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/ab128_img_large_rr1_ep20_590k_tv_done_good/exp_ab128_img_large_rr1_ep20_590k_tv_0.00003_128_50_dp_0.3_wd_0.05_bce_3linear_s88_abcd/results/eval_logs.json), [output.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/ab128_img_large_rr1_ep20_590k_tv_done_good/exp_ab128_img_large_rr1_ep20_590k_tv_0.00003_128_50_dp_0.3_wd_0.05_bce_3linear_s88_abcd/stdout.txt).<br />
 Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/results.txt).<br />
-Model checkpoint: [.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/vqa_large_best.zip).
+Model checkpoint: [.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/vqa_large_best.zip).
 ```bash
 python oscar/run_vqa.py -j 4 --img_feature_dim 2054 --max_img_seq_length
     50 --data_label_type mask --img_feature_type faster_r-cnn --data_dir datasets/vqa/2k
