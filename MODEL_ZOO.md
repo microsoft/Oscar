@@ -28,7 +28,8 @@ Script to finetune for Oscar base model.
 Base model is trained on train split and evaluated on the val split. Good for later comparison.
 
 Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/base_9m_ep107_1192k_eu1/application_1575931286052_40649/results/eval_logs.json), [output.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/base_9m_ep107_1192k_eu1/application_1575931286052_40649/results/stdout.txt).<br />
-Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/results.txt).
+Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/results.txt).<br />
+Model checkpoint: [.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/vqa_base_best.zip).
 ```bash
 python oscar/run_vqa.py -j 4 --img_feature_dim 2054 --max_img_seq_length
     50 --data_label_type mask --img_feature_type faster_r-cnn --data_dir datasets/vqa/2k
@@ -45,7 +46,8 @@ Script to finetune for Oscar large model.
 Large model is trained on train+val split and evaluated on the val split, for reproduce the paper's best result.
 
 Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/ab128_img_large_rr1_ep20_590k_tv_done_good/exp_ab128_img_large_rr1_ep20_590k_tv_0.00003_128_50_dp_0.3_wd_0.05_bce_3linear_s88_abcd/results/eval_logs.json), [output.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/ab128_img_large_rr1_ep20_590k_tv_done_good/exp_ab128_img_large_rr1_ep20_590k_tv_0.00003_128_50_dp_0.3_wd_0.05_bce_3linear_s88_abcd/stdout.txt).<br />
-Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/results.txt).
+Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/large/results.txt).<br />
+Model checkpoint: [.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/vqa/base/vqa_large_best.zip).
 ```bash
 python oscar/run_vqa.py -j 4 --img_feature_dim 2054 --max_img_seq_length
     50 --data_label_type mask --img_feature_type faster_r-cnn --data_dir datasets/vqa/2k
@@ -62,7 +64,8 @@ python oscar/run_vqa.py -j 4 --img_feature_dim 2054 --max_img_seq_length
 Script to finetune for Oscar base model.
 
 Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/gqa/base/ab175_base_ep107_1192k_0.4true_taeb_done_25eps_good/exp_ab175_base_ep107_1192k_0.4true_taeb_b_48_0.00005_165_45_dp_0.3_abce/results/eval_logs.json), [output.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/gqa/base/ab175_base_ep107_1192k_0.4true_taeb_done_25eps_good/exp_ab175_base_ep107_1192k_0.4true_taeb_b_48_0.00005_165_45_dp_0.3_abce/stdout.txt).<br />
-Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/gqa/base/ab165_img45_1568928610179_62515_test_done_good/results.txt).
+Final server results: [results.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/gqa/base/ab165_img45_1568928610179_62515_test_done_good/results.txt).<br />
+Model checkpoint: [.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/gqa/base/gqa_base_best.zip).
 ```bash
 python oscar/run_gqa.py -j 4 --img_feature_dim 2054 --max_img_seq_length
     45 --data_dir datasets/GQA/0.4true --model_type bert --model_name_or_path pretrained_models/base-vg-labels/ep_107_1192087
