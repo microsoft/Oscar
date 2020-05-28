@@ -126,6 +126,10 @@ python oscar/run_nlvr.py -j 4 --img_feature_dim 2054 --max_img_seq_length
 
 ## Image Text Retrieval
 Script to finetune for Oscar base model (4 V100 with 16G mem):
+
+Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/base/eval_logs.json), [log.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/base/log.txt).
+Model checkpoint: [checkpoint.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/base/checkpoint.zip).
+
 ```bash
 python oscar/retrieval.py \
     --model_name_or_path pretrained_models/base-vg-labels/ep_67_588997 \
@@ -136,7 +140,7 @@ python oscar/retrieval.py \
     --eval_caption_index_file minival_caption_indexs_top20.pt \
     --per_gpu_train_batch_size 64 \
     --learning_rate 0.00002 \
-    --num_train_epochs 20 \
+    --num_train_epochs 30 \
     --weight_decay 0.05 \
     --save_steps 5000 \
     --add_od_labels \
@@ -146,6 +150,10 @@ python oscar/retrieval.py \
 ```
 
 Script to finetune for Oscar large model (8 V100 with 32G mem):
+
+Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/large/eval_logs.json), [log.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/large/log.txt).
+Model checkpoint: [checkpoint.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/large/checkpoint.zip).
+
 ```bash
 python oscar/run_retrieval.py \
     --model_name_or_path pretrained_models/large-vg-labels/ep_7_816000 \
@@ -193,6 +201,10 @@ python oscar/run_retrieval.py \
 
 ## Image Captioning on COCO
 Script to finetune for Oscar base model (4 V100 with 16G mem):
+
+Training logs: [log.txt](https://biglmdiag.blob.core.windows.net/oscar/exp/coco_caption/base/log.txt).
+Model checkpoint: [checkpoint.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/coco_caption/base/checkpoint.zip).
+
 1) First train with cross-entropy loss:
 ```bash
 python oscar/run_captioning.py \
