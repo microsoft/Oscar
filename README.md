@@ -1,5 +1,6 @@
 # Oscar: Object-Semantics Aligned Pre-training for Vision-and-Language Tasks    <img src="docs/oscar_logo.png" width="200" align="right"> 
 ## Updates
+05/28/2020: Released finetuned models on downstream tasks, please check [MODEL_ZOO.md](MODEL_ZOO.md).
 05/15/2020: Released pretrained models, datasets, and code for downstream tasks finetuning.
 
 ## Introduction
