@@ -131,14 +131,14 @@ Training logs: [eval_logs.json](https://biglmdiag.blob.core.windows.net/oscar/ex
 Model checkpoint: [checkpoint.zip](https://biglmdiag.blob.core.windows.net/oscar/exp/retrieval/base/checkpoint.zip).
 
 ```bash
-python oscar/retrieval.py \
+python oscar/run_retrieval.py \
     --model_name_or_path pretrained_models/base-vg-labels/ep_67_588997 \
     --do_train \
     --do_lower_case \
     --evaluate_during_training \
     --num_captions_per_img_val 20 \
     --eval_caption_index_file minival_caption_indexs_top20.pt \
-    --per_gpu_train_batch_size 64 \
+    --per_gpu_train_batch_size 32 \
     --learning_rate 0.00002 \
     --num_train_epochs 30 \
     --weight_decay 0.05 \
