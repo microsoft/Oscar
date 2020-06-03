@@ -24,7 +24,7 @@ python setup.py install --cuda_ext --cpp_ext
 
 # install oscar
 cd $INSTALL_DIR
-git clone --recursive git@github.com:xjli/Oscar.git
+git clone --recursive git@github.com:microsoft/Oscar.git
 cd Oscar/coco_caption
 ./get_stanford_models.sh
 cd ..
