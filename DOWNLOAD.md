@@ -33,6 +33,6 @@ any URL above, the command is:
 path/to/azcopy copy <URL> <local_path>
 
 # for example, downloading coco_caption.zip
-path/to/azcopy copy https://biglmdiag.blob.core.windows.net/oscar/pretrained_models/coco_caption.zip <local_path>
+path/to/azcopy copy https://biglmdiag.blob.core.windows.net/oscar/datasets/coco_caption.zip <local_path>
 ```
 
