@@ -1,7 +1,7 @@
 # Oscar: Object-Semantics Aligned Pre-training for Vision-and-Language Tasks    <img src="docs/oscar_logo.png" width="200" align="right"> 
 ## Updates
 05/28/2020: Released finetuned models on downstream tasks, please check [MODEL_ZOO.md](MODEL_ZOO.md).
-05/15/2020: Released pretrained models, datasets, and code for downstream tasks finetuning.
+05/15/2020: Released pretrained models, datasets, and code for downstream tasks finetuning. <br/>
 01/13/2021: our new work [VinVL] (https://arxiv.org/abs/2101.00529) proposed OSCAR+, an improved version of OSCAR, and provided a better object-attribute detection model to extract features for V+L tasks. The VinVL work achieved SOTA performance on all seven V+L tasks here. Please stay tuned for the model and code release. 
 
 ## Introduction
