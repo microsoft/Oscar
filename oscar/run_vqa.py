@@ -946,6 +946,7 @@ def main():
     parser.add_argument("--loss_type", default='kl', type=str, help="kl or xe")
     parser.add_argument("--use_vg", action='store_true', help="Use VG-QA or not.")
     parser.add_argument("--use_vg_dev", action='store_true', help="Use VG-QA as validation.")
+    #parser.add_argument("--use_img_layernorm", action='store_true', help="use_img_layernorm")
 
     ## Other parameters
     parser.add_argument("--config_name", default="", type=str, help="Pretrained config name or path if not the same as model_name")
@@ -1096,7 +1097,8 @@ def main():
     config.loss_type = args.loss_type
     config.classifier = args.classifier
     config.cls_hidden_scale = args.cls_hidden_scale
-
+    #config.use_img_layernorm = args.use_img_layernorm
+    
     # load discrete code
     if args.img_feature_type in ['dis_code', 'dis_code_t']:
         logger.info('Load discrete code from: {}'.format(args.data_dir))

@@ -1,4 +1,4 @@
-# Copyright (c) 2020 Microsoft Corporation. Licensed under the MIT license. 
+# Copyright (c) 2021 Microsoft Corporation. Licensed under the MIT license. 
 # Copyright (c) 2019, Yufei Wang, Karan Desai. Licensed under the MIT license.
 # Code is modified from https://github.com/nocaps-org/updown-baseline
 
@@ -277,7 +277,7 @@ class ConstrainedBeamSearch(object):
             restricted_predicted_classes = restricted_predicted_classes.view(batch_size, -1)
             predictions.append(restricted_predicted_classes)
 
-            backpointer = restricted_beam_indices / self.per_node_beam_size
+            backpointer = restricted_beam_indices // self.per_node_beam_size
             backpointers.append(backpointer.view(batch_size, -1))
 
             last_log_probabilities = restricted_beam_log_probs.view(batch_size, num_fsm_states, -1)
@@ -368,6 +368,7 @@ def select_best_beam_with_constraints(
     beam_log_probabilities: torch.Tensor,
     given_constraints: torch.Tensor,
     min_constraints_to_satisfy: int,
+    eos_token_ids: List[int],
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     r"""
     Select the best beam which satisfies specified minimum constraints out of a total number of
@@ -416,10 +417,14 @@ def select_best_beam_with_constraints(
         # fmt: on
 
         valid_beams = beams[i, valid_states, 0, :]
-        valid_beam_log_probabilities = beam_log_probabilities[i, valid_states, 0]
+        valid_length = torch.ones_like(valid_beams)
+        for eos_token_id in eos_token_ids:
+            valid_length = valid_length.mul(valid_beams.ne(eos_token_id).long())
+        valid_length = valid_length.sum(1) + 1
+        valid_beam_log_probabilities = beam_log_probabilities[i, valid_states, 0] / valid_length
 
         selected_index = torch.argmax(valid_beam_log_probabilities)
-        best_beams.append(valid_beams[selected_index, :])
+        best_beams.append(valid_beams[selected_index, :] )
         best_beam_log_probabilities.append(valid_beam_log_probabilities[selected_index])
 
     # shape: (batch_size, max_decoding_steps)

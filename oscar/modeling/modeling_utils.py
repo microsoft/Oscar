@@ -2,15 +2,23 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+import os
+import logging
 import torch
 import torch.nn.functional as F
 
 from transformers.pytorch_transformers.modeling_bert import (BertConfig,
-        load_tf_weights_in_bert, BERT_PRETRAINED_MODEL_ARCHIVE_MAP)
-from transformers.pytorch_transformers.modeling_utils import PreTrainedModel
+        load_tf_weights_in_bert, BERT_PRETRAINED_MODEL_ARCHIVE_MAP,
+        BertPreTrainedModel)
+from transformers.pytorch_transformers.modeling_utils import (PreTrainedModel,
+    WEIGHTS_NAME, TF_WEIGHTS_NAME)
+from transformers.pytorch_transformers.file_utils import cached_path
 
 
-class CaptionPreTrainedModel(PreTrainedModel):
+logger = logging.getLogger()
+
+
+class CaptionPreTrainedModel(BertPreTrainedModel):
     """ Expand base class for image captioning modeling.
     """
     config_class = BertConfig
@@ -295,8 +303,8 @@ class CaptionPreTrainedModel(PreTrainedModel):
                 else:
                     token_len = 2
                     next_token_idx = 1
-
             assert outputs[0].shape[1] == token_len
+
             next_token_logits = outputs[0][:, next_token_idx, :]
 
             # if model has past, then set the past variable to speed up decoding
@@ -353,6 +361,8 @@ class CaptionPreTrainedModel(PreTrainedModel):
         logprobs = torch.cat(logprobs, dim=1)
         unfinished_sents = torch.stack(unfinished_sents, dim=1).float()
         sum_logprobs = (logprobs * unfinished_sents).sum(dim=1)
+        # return logprobs to keep consistent with beam search output
+        logprobs = sum_logprobs / unfinished_sents.sum(dim=1)
 
         # pad to the same length, otherwise DataParallel will give error
         pad_len = max_length - input_ids.shape[1]
@@ -361,7 +371,7 @@ class CaptionPreTrainedModel(PreTrainedModel):
             input_ids = torch.cat([input_ids, padding_ids], dim=1)
 
         # (batch_size, n_best, max_len), (batch_size, n_best)
-        return input_ids.unsqueeze(1), sum_logprobs.unsqueeze(1)
+        return input_ids.unsqueeze(1), logprobs.unsqueeze(1)
 
     def _generate_beam_search(
         self,
@@ -667,5 +677,199 @@ class BeamHypotheses(object):
             return self.worst_score >= best_sum_logprobs / self.max_length ** self.length_penalty
 
 
+class ImgPreTrainedModel(PreTrainedModel):
+    """ Base class for all models. Handle loading/storing model config and
+        a simple interface for dowloading and loading pretrained models.
+    """
 
+    def __init__(self, config, *inputs, **kwargs):
+        super(ImgPreTrainedModel, self).__init__(config, *inputs, **kwargs)
 
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        r"""Instantiate a pretrained pytorch model from a pre-trained model configuration.
+
+            The model is set in evaluation mode by default using `model.eval()` (Dropout modules are desactivated)
+            To train the model, you should first set it back in training mode with `model.train()`
+
+        Params:
+            **pretrained_model_name_or_path**: either:
+                - a string with the `shortcut name` of a pre-trained model to load from cache
+                    or download and cache if not already stored in cache (e.g. 'bert-base-uncased').
+                - a path to a `directory` containing a configuration file saved
+                    using the `save_pretrained(save_directory)` method.
+                - a path or url to a tensorflow index checkpoint `file` (e.g. `./tf_model/model.ckpt.index`).
+                    In this case, ``from_tf`` should be set to True and a configuration object should be
+                    provided as `config` argument. This loading option is slower than converting the TensorFlow
+                    checkpoint in a PyTorch model using the provided conversion scripts and loading
+                    the PyTorch model afterwards.
+            **model_args**: (`optional`) Sequence:
+                All remaning positional arguments will be passed to the underlying model's __init__ function
+            **config**: an optional configuration for the model to use instead of an automatically loaded configuation.
+                Configuration can be automatically loaded when:
+                - the model is a model provided by the library (loaded with a `shortcut name` of a pre-trained model), or
+                - the model was saved using the `save_pretrained(save_directory)` (loaded by suppling the save directory).
+            **state_dict**: an optional state dictionnary for the model to use instead of a state dictionary loaded
+                from saved weights file.
+                This option can be used if you want to create a model from a pretrained configuraton but load your own weights.
+                In this case though, you should check if using `save_pretrained(dir)` and `from_pretrained(save_directory)` is not
+                a simpler option.
+            **cache_dir**: (`optional`) string:
+                Path to a directory in which a downloaded pre-trained model
+                configuration should be cached if the standard cache should not be used.
+            **output_loading_info**: (`optional`) boolean:
+                Set to ``True`` to also return a dictionnary containing missing keys, unexpected keys and error messages.
+            **kwargs**: (`optional`) dict:
+                Dictionary of key, values to update the configuration object after loading.
+                Can be used to override selected configuration parameters. E.g. ``output_attention=True``.
+
+               - If a configuration is provided with `config`, **kwargs will be directly passed
+                 to the underlying model's __init__ method.
+               - If a configuration is not provided, **kwargs will be first passed to the pretrained
+                 model configuration class loading function (`PretrainedConfig.from_pretrained`).
+                 Each key of **kwargs that corresponds to a configuration attribute
+                 will be used to override said attribute with the supplied **kwargs value.
+                 Remaining keys that do not correspond to any configuration attribute will
+                 be passed to the underlying model's __init__ function.
+
+        Examples::
+
+            >>> model = BertModel.from_pretrained('bert-base-uncased')    # Download model and configuration from S3 and cache.
+            >>> model = BertModel.from_pretrained('./test/saved_model/')  # E.g. model was saved using `save_pretrained('./test/saved_model/')`
+            >>> model = BertModel.from_pretrained('bert-base-uncased', output_attention=True)  # Update configuration during loading
+            >>> assert model.config.output_attention == True
+            >>> # Loading from a TF checkpoint file instead of a PyTorch model (slower)
+            >>> config = BertConfig.from_json_file('./tf_model/my_tf_model_config.json')
+            >>> model = BertModel.from_pretrained('./tf_model/my_tf_checkpoint.ckpt.index', from_tf=True, config=config)
+
+        """
+        config = kwargs.pop('config', None)
+        state_dict = kwargs.pop('state_dict', None)
+        cache_dir = kwargs.pop('cache_dir', None)
+        from_tf = kwargs.pop('from_tf', False)
+        output_loading_info = kwargs.pop('output_loading_info', False)
+
+        # Load config
+        if config is None:
+            config, model_kwargs = cls.config_class.from_pretrained(
+                pretrained_model_name_or_path, *model_args,
+                cache_dir=cache_dir, return_unused_kwargs=True,
+                **kwargs
+            )
+        else:
+            model_kwargs = kwargs
+
+        # Load model
+        if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
+            archive_file = cls.pretrained_model_archive_map[pretrained_model_name_or_path]
+        elif os.path.isdir(pretrained_model_name_or_path):
+            if from_tf:
+                # Directly load from a TensorFlow checkpoint
+                archive_file = os.path.join(pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index")
+            else:
+                archive_file = os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME)
+        else:
+            if from_tf:
+                # Directly load from a TensorFlow checkpoint
+                archive_file = pretrained_model_name_or_path + ".index"
+            else:
+                archive_file = pretrained_model_name_or_path
+        # redirect to the cache, if necessary
+        try:
+            resolved_archive_file = cached_path(archive_file, cache_dir=cache_dir)
+        except EnvironmentError:
+            if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
+                logger.error(
+                    "Couldn't reach server at '{}' to download pretrained weights.".format(
+                        archive_file))
+            else:
+                logger.error(
+                    "Model name '{}' was not found in model name list ({}). "
+                    "We assumed '{}' was a path or url but couldn't find any file "
+                    "associated to this path or url.".format(
+                        pretrained_model_name_or_path,
+                        ', '.join(cls.pretrained_model_archive_map.keys()),
+                        archive_file))
+            return None
+        if resolved_archive_file == archive_file:
+            logger.info("loading weights file {}".format(archive_file))
+        else:
+            logger.info("loading weights file {} from cache at {}".format(
+                archive_file, resolved_archive_file))
+
+        # Instantiate model.
+        model = cls(config, *model_args, **model_kwargs)
+
+        if state_dict is None and not from_tf:
+            state_dict = torch.load(resolved_archive_file, map_location='cpu')
+
+        if from_tf:
+            # Directly load from a TensorFlow checkpoint
+            return cls.load_tf_weights(model, config, resolved_archive_file[:-6])  # Remove the '.index'
+
+        # Convert old format to new format if needed from a PyTorch state_dict
+        old_keys = []
+        new_keys = []
+        for key in state_dict.keys():
+            new_key = None
+            if 'gamma' in key:
+                new_key = key.replace('gamma', 'weight')
+            if 'beta' in key:
+                new_key = key.replace('beta', 'bias')
+            if new_key:
+                old_keys.append(key)
+                new_keys.append(new_key)
+        for old_key, new_key in zip(old_keys, new_keys):
+            state_dict[new_key] = state_dict.pop(old_key)
+
+        # Load from a PyTorch state_dict
+        missing_keys = []
+        unexpected_keys = []
+        error_msgs = []
+        # copy state_dict so _load_from_state_dict can modify it
+        metadata = getattr(state_dict, '_metadata', None)
+        state_dict = state_dict.copy()
+        if metadata is not None:
+            state_dict._metadata = metadata
+
+        def load(module, prefix=''):
+            local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
+            module._load_from_state_dict(
+                state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs)
+            for name, child in module._modules.items():
+                if child is not None:
+                    load(child, prefix + name + '.')
+
+        # Make sure we are able to load base models as well as derived models (with heads)
+        start_prefix = ''
+        model_to_load = model
+        if not hasattr(model, cls.base_model_prefix) and any(s.startswith(cls.base_model_prefix) for s in state_dict.keys()):
+            start_prefix = cls.base_model_prefix + '.'
+        if hasattr(model, cls.base_model_prefix) and not any(s.startswith(cls.base_model_prefix) for s in state_dict.keys()):
+            model_to_load = getattr(model, cls.base_model_prefix)
+
+        load(model_to_load, prefix=start_prefix)
+        if len(missing_keys) > 0:
+            logger.info("Weights of {} not initialized from pretrained model: {}".format(
+                model.__class__.__name__, missing_keys))
+        if len(unexpected_keys) > 0:
+            logger.info("Weights from pretrained model not used in {}: {}".format(
+                model.__class__.__name__, unexpected_keys))
+        if len(error_msgs) == 2 and "size mismatch for cls.seq_relationship.weight" in error_msgs[0]:
+            logger.info('Error(s) in loading state_dict for {}:\n\t{}'.format(
+                model.__class__.__name__, "\n\t".join(error_msgs)))
+        elif len(error_msgs) > 0:
+            raise RuntimeError('Error(s) in loading state_dict for {}:\n\t{}'.format(
+                               model.__class__.__name__, "\n\t".join(error_msgs)))
+
+        if hasattr(model, 'tie_weights'):
+            model.tie_weights()  # make sure word embedding weights are still tied
+
+        # Set model in evaluation mode to desactivate DropOut modules by default
+        model.eval()
+
+        if output_loading_info:
+            loading_info = {"missing_keys": missing_keys, "unexpected_keys": unexpected_keys, "error_msgs": error_msgs}
+            return model, loading_info
+
+        return model

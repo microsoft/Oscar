@@ -11,8 +11,10 @@ from transformers.pytorch_transformers.modeling_bert import (BertEmbeddings,
         BertSelfAttention, BertAttention, BertEncoder, BertLayer, 
         BertSelfOutput, BertIntermediate, BertOutput,
         BertPooler, BertLayerNorm, BertPreTrainedModel,
-		BertPredictionHeadTransform)
-from .modeling_utils import CaptionPreTrainedModel
+		BertPredictionHeadTransform, BertOnlyMLMHead, BertLMPredictionHead,
+        BertConfig, BERT_PRETRAINED_MODEL_ARCHIVE_MAP,
+        load_tf_weights_in_bert)
+from .modeling_utils import CaptionPreTrainedModel, ImgPreTrainedModel
 from ..utils.cbs import ConstrainedBeamSearch, select_best_beam_with_constraints
 
 logger = logging.getLogger(__name__)
@@ -364,17 +366,30 @@ class ImageBertForMultipleChoice(BertPreTrainedModel):
         else:
             self.bert = BertModel(config)  # original BERT
 
+        if hasattr(config, 'use_img_layernorm'):
+            self.use_img_layernorm = config.use_img_layernorm
+        else:
+            self.use_img_layernorm = None
+
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         if hasattr(config, 'classifier'):
             if not hasattr(config, 'cls_hidden_scale'): config.cls_hidden_scale = 2
             if config.classifier == 'linear':
                 self.classifier = nn.Linear(config.num_choice*config.hidden_size, self.config.num_labels)
             elif config.classifier == 'mlp':
-                self.classifier = nn.Sequential(
+                if self.use_img_layernorm:
+                    self.classifier = nn.Sequential(
                     nn.Linear(config.num_choice*config.hidden_size, config.hidden_size*config.cls_hidden_scale),
                     nn.ReLU(),
+                    BertLayerNorm(config.hidden_size*config.cls_hidden_scale, eps=config.layer_norm_eps),
                     nn.Linear(config.hidden_size*config.cls_hidden_scale, self.config.num_labels)
                 )
+                else:
+                    self.classifier = nn.Sequential(
+                        nn.Linear(config.num_choice*config.hidden_size, config.hidden_size*config.cls_hidden_scale),
+                        nn.ReLU(),
+                        nn.Linear(config.hidden_size*config.cls_hidden_scale, self.config.num_labels)
+                    )
         else:
             self.classifier = nn.Linear(config.num_choice*config.hidden_size, self.config.num_labels)  # original
 
@@ -416,6 +431,175 @@ class ImageBertForMultipleChoice(BertPreTrainedModel):
             outputs = (loss,) + outputs
         return outputs
 
+""" Oscar for Multiple Choice """
+class OscarForMultipleChoice(BertPreTrainedModel):
+    r"""
+    Inputs:
+        **input_ids**: ``torch.LongTensor`` of shape ``(batch_size, num_choices, sequence_length)``:
+            Indices of input sequence tokens in the vocabulary.
+            The second dimension of the input (`num_choices`) indicates the number of choices to score.
+            To match pre-training, BERT input sequence should be formatted with [CLS] and [SEP] tokens as follows:
+
+            (a) For sequence pairs:
+
+                ``tokens:         [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]``
+
+                ``token_type_ids:   0   0  0    0    0     0       0   0   1  1  1  1   1   1``
+
+            (b) For single sequences:
+
+                ``tokens:         [CLS] the dog is hairy . [SEP]``
+
+                ``token_type_ids:   0   0   0   0  0     0   0``
+
+            Indices can be obtained using :class:`pytorch_transformers.BertTokenizer`.
+            See :func:`pytorch_transformers.PreTrainedTokenizer.encode` and
+            :func:`pytorch_transformers.PreTrainedTokenizer.convert_tokens_to_ids` for details.
+        **token_type_ids**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, num_choices, sequence_length)``:
+            Segment token indices to indicate first and second portions of the inputs.
+            The second dimension of the input (`num_choices`) indicates the number of choices to score.
+            Indices are selected in ``[0, 1]``: ``0`` corresponds to a `sentence A` token, ``1``
+            corresponds to a `sentence B` token
+            (see `BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding`_ for more details).
+        **attention_mask**: (`optional`) ``torch.FloatTensor`` of shape ``(batch_size, num_choices, sequence_length)``:
+            Mask to avoid performing attention on padding token indices.
+            The second dimension of the input (`num_choices`) indicates the number of choices to score.
+            Mask values selected in ``[0, 1]``:
+            ``1`` for tokens that are NOT MASKED, ``0`` for MASKED tokens.
+        **head_mask**: (`optional`) ``torch.FloatTensor`` of shape ``(num_heads,)`` or ``(num_layers, num_heads)``:
+            Mask to nullify selected heads of the self-attention modules.
+            Mask values selected in ``[0, 1]``:
+            ``1`` indicates the head is **not masked**, ``0`` indicates the head is **masked**.
+        **labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
+            Labels for computing the multiple choice classification loss.
+            Indices should be in ``[0, ..., num_choices]`` where `num_choices` is the size of the second dimension
+            of the input tensors. (see `input_ids` above)
+
+    Outputs: `Tuple` comprising various elements depending on the configuration (config) and inputs:
+        **loss**: (`optional`, returned when ``labels`` is provided) ``torch.FloatTensor`` of shape ``(1,)``:
+            Classification loss.
+        **classification_scores**: ``torch.FloatTensor`` of shape ``(batch_size, num_choices)`` where `num_choices` is the size of the second dimension
+            of the input tensors. (see `input_ids` above).
+            Classification scores (before SoftMax).
+        **hidden_states**: (`optional`, returned when ``config.output_hidden_states=True``)
+            list of ``torch.FloatTensor`` (one for the output of each layer + the output of the embeddings)
+            of shape ``(batch_size, sequence_length, hidden_size)``:
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        **attentions**: (`optional`, returned when ``config.output_attentions=True``)
+            list of ``torch.FloatTensor`` (one for each layer) of shape ``(batch_size, num_heads, sequence_length, sequence_length)``:
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention heads.
+
+    Examples::
+
+        >>> config = BertConfig.from_pretrained('bert-base-uncased')
+        >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        >>>
+        >>> model = BertForMultipleChoice(config)
+        >>> choices = ["Hello, my dog is cute", "Hello, my cat is amazing"]
+        >>> input_ids = torch.tensor([tokenizer.encode(s) for s in choices]).unsqueeze(0)  # Batch size 1, 2 choices
+        >>> labels = torch.tensor(1).unsqueeze(0)  # Batch size 1
+        >>> outputs = model(input_ids, labels=labels)
+        >>> loss, classification_scores = outputs[:2]
+
+    """
+
+    def __init__(self, config):
+        super(OscarForMultipleChoice, self).__init__(config)
+        self.loss_type = config.loss_type
+
+        if config.img_feature_dim > 0:
+            self.bert = BertImgModel(config) # ImageBERT
+        else:
+            self.bert = BertModel(config)  # original BERT
+
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        if hasattr(config, 'classifier'):
+            if not hasattr(config, 'cls_hidden_scale'): config.cls_hidden_scale = 2
+
+            if config.classifier == 'linear':
+                self.classifier = nn.Linear(config.hidden_size, 2) # original
+                #self.classifier = weight_norm(nn.Linear(config.hidden_size, self.config.num_labels), dim=None)
+            elif config.classifier == 'mlp':
+                self.classifier = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size*config.cls_hidden_scale),
+                                            nn.ReLU(),
+                                            nn.Linear(config.hidden_size*config.cls_hidden_scale, 2)) # bce loss
+        else:
+            self.classifier = nn.Linear(config.hidden_size, config.num_labels)  # original
+
+        self.apply(self.init_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None,
+                position_ids=None, head_mask=None, img_feats=None):
+        num_choices = input_ids.shape[1]
+
+        flat_input_ids = input_ids.view(-1, input_ids.size(-1))
+        flat_position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
+        flat_token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
+        flat_attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
+
+        flat_img_feats = img_feats.view(-1, img_feats.size(-2), img_feats.size(-1)) if img_feats is not None else None
+
+        if isinstance(self.bert, BertImgModel):
+            outputs = self.bert(flat_input_ids, position_ids=flat_position_ids, token_type_ids=flat_token_type_ids,
+                            attention_mask=flat_attention_mask, head_mask=head_mask, img_feats=flat_img_feats)
+        else:
+            outputs = self.bert(flat_input_ids, position_ids=flat_position_ids, token_type_ids=flat_token_type_ids,
+                                attention_mask=flat_attention_mask, head_mask=head_mask)
+
+        pooled_output = outputs[1]
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+
+        outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
+
+        #logger.info('pooled_output: {}, reshaped_pool_output: {}, logits: {}'.format(pooled_output.shape, reshaped_pool_output.shape, logits.shape))
+        #logger.info('logits: {}, reshaped_logits: {}'.format(logits.shape, reshaped_logits.shape))
+        #logger.info('labels: {}, labels.veiw: {}, labels.view(-1, num_labels): {}'.format(labels.shape, labels.view(-1).shape, labels.view(-1, self.config.num_labels).shape))
+        if labels is not None:
+            if self.loss_type == 'bce': #[batch_size, 2] v1
+                #loss = instance_bce_with_logits(reshaped_logits, labels)
+                loss = instance_bce_with_logits(logits, labels.view(-1, self.config.num_labels))
+            elif self.loss_type == 'bxe':
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits, labels.view(-1))
+            else:
+                loss_fct = CrossEntropyLoss()
+                #loss = loss_fct(reshaped_logits, labels)
+                loss = loss_fct(logits, labels)
+            outputs = (loss,) + outputs
+
+        return outputs  # (loss), reshaped_logits, (hidden_states), (attentions)
+
+
+class BertCaptioningLoss(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.label_smoothing = getattr(config, 'label_smoothing', 0)
+        self.drop_worst_ratio = getattr(config, 'drop_worst_ratio', 0)
+        self.drop_worst_after = getattr(config, 'drop_worst_after', 0)
+        self.log_soft = nn.LogSoftmax(dim=1)
+        self.kl = nn.KLDivLoss(reduction='none')
+        self.iter = 0
+
+    def forward(self, logits, target):
+        self.iter += 1
+        eps = self.label_smoothing
+        n_class = logits.size(1)
+        one_hot = torch.zeros_like(logits).scatter(1, target.view(-1, 1), 1)
+        one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+        log_prb = self.log_soft(logits)
+        loss = self.kl(log_prb, one_hot).sum(1)
+
+        if self.drop_worst_ratio > 0 and self.iter > self.drop_worst_after:
+            loss, _ = torch.topk(loss,
+                    k=int(loss.shape[0] * (1-self.drop_worst_ratio)),
+                    largest=False)
+
+        loss = loss.mean()
+
+        return loss
+
 
 class BertForImageCaptioning(CaptionPreTrainedModel):
     """
@@ -425,12 +609,20 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
         super(BertForImageCaptioning, self).__init__(config)
         self.config = config
         self.bert = BertImgModel(config)
-        self.transform = BertPredictionHeadTransform(config)
-        bert_embedding_weight = self.bert.embeddings.word_embeddings.weight
-        self.decoder = nn.Linear(bert_embedding_weight.size(1),
-                            bert_embedding_weight.size(0), bias=False)
-        self.loss = nn.CrossEntropyLoss(reduction='mean')
-        self.drop_worst_ratio = 0.2
+        self.cls = BertOnlyMLMHead(config)
+        self.loss = BertCaptioningLoss(config)
+
+        self.apply(self.init_weights)
+        self.tie_weights()
+
+    def tie_weights(self):
+        if hasattr(self.config, 'tie_weights') and self.config.tie_weights:
+            self._tie_or_clone_weights(self.cls.predictions.decoder,
+                                       self.bert.embeddings.word_embeddings)
+        freeze = False
+        if hasattr(self.config, 'freeze_embedding'):
+            freeze = self.config.freeze_embedding
+        self.bert.embeddings.word_embeddings.weight.requires_grad = not freeze
 
     def forward(self, *args, **kwargs):
         is_decode = kwargs.get('is_decode', False)
@@ -449,17 +641,19 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
         sequence_output = outputs[0][:, :masked_pos.shape[-1], :]
 
         if is_training:
+            sequence_output = outputs[0][:, :masked_pos.shape[-1], :]
             # num_masks_in_batch * hidden_size
             sequence_output_masked = sequence_output[masked_pos==1, :]
-            transformed_output_masked = self.transform(sequence_output_masked)
-            class_logits = self.decoder(transformed_output_masked)
+            class_logits = self.cls(sequence_output_masked)
             masked_ids = masked_ids[masked_ids != 0]   # remove padding masks
             masked_loss = self.loss(class_logits.float(), masked_ids)
             outputs = (masked_loss, class_logits,) + outputs[2:]
         else:
-            class_logits = self.decoder(self.transform(sequence_output))
+            sequence_output = outputs[0][:, :input_ids.shape[-1], :]
+            class_logits = self.cls(sequence_output)
             outputs = (class_logits,) + outputs[2:]
         return outputs
+
 
     def prepare_inputs_for_generation(self, curr_ids, past=None):
         # NOTE: if attention is on, it should be the token used to mask words in training
@@ -568,11 +762,13 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
             position_ids=None, head_mask=None, input_ids=None, max_length=None,
             do_sample=None, num_beams=None, temperature=None, top_k=None, top_p=None,
             repetition_penalty=None, bos_token_id=None, pad_token_id=None,
-            eos_token_ids=None, mask_token_id=None, length_penalty=None, num_return_sequences=None,
+            eos_token_ids=None, mask_token_id=None, length_penalty=None,
+            num_return_sequences=None,
             num_keep_best=1, is_decode=None,
             add_od_labels=False, od_labels_start_posid=None,
             use_cbs=False, fsm=None, num_constraints=None,
             min_constraints_to_satisfy=None, use_hypo=False,
+            decoding_constraint_flag=None, bad_ending_ids=None,
             ):
         """ Generates captions given image features
         """
@@ -603,22 +799,28 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
             assert input_ids.shape[0] == batch_size
             od_label_ids = input_ids[:, self.max_seq_len:]
             self.od_labels_len = input_ids.shape[1] - self.max_seq_len
-            self.od_label_ids = self._expand_for_beams(od_label_ids, num_beams,
-                    num_fsm_states)
             input_ids = None
         else:
             self.od_labels_len = 0
-            self.od_label_ids = None
+            od_label_ids = None
             assert input_ids.shape == (batch_size, self.max_seq_len)
             input_ids = None
 
         if input_ids is None:
             input_ids = torch.full(
-                (batch_size, 1), bos_token_id, dtype=torch.long, device=next(self.parameters()).device
+                (batch_size, 1), bos_token_id, dtype=torch.long, device=img_feats.device
             )
         else:
             assert input_ids.dim() == 2, "Input prompt should be of shape (batch_size, sequence length)."
             assert input_ids.shape[0] == batch_size, "Input batch size must match image features"
+
+        cur_len = input_ids.shape[1]
+        if  num_return_sequences != 1:
+            # Expand input to num return sequences
+            input_ids = self._expand_for_beams(input_ids, num_return_sequences)
+            effective_batch_size = batch_size * num_return_sequences
+        else:
+            effective_batch_size = batch_size
 
         if position_ids is None:
             position_ids = torch.arange(self.max_seq_len, dtype=torch.long, device=input_ids.device)
@@ -631,16 +833,14 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
                 posids_len += self.od_labels_len
             position_ids = position_ids.unsqueeze(0).expand([batch_size, posids_len])
 
-        cur_len = input_ids.shape[1]
-        assert num_return_sequences == 1, 'not supported num_return_sequences != 1'
-        effective_batch_size = batch_size
-
-        self.img_feats = self._expand_for_beams(img_feats, num_beams, num_fsm_states)
-        self.full_attention_mask = self._expand_for_beams(attention_mask, num_beams, num_fsm_states)
-        self.full_masked_pos = self._expand_for_beams(masked_pos, num_beams, num_fsm_states)
-        self.full_token_type_ids = self._expand_for_beams(token_type_ids, num_beams, num_fsm_states)
-        self.full_position_ids = self._expand_for_beams(position_ids, num_beams, num_fsm_states)
-        self.full_head_mask = self._expand_for_beams(head_mask, num_beams, num_fsm_states)
+        num_expand = num_beams * num_fsm_states * num_return_sequences
+        self.od_label_ids = self._expand_for_beams(od_label_ids, num_expand)
+        self.img_feats = self._expand_for_beams(img_feats, num_expand)
+        self.full_attention_mask = self._expand_for_beams(attention_mask, num_expand)
+        self.full_masked_pos = self._expand_for_beams(masked_pos, num_expand)
+        self.full_token_type_ids = self._expand_for_beams(token_type_ids, num_expand)
+        self.full_position_ids = self._expand_for_beams(position_ids, num_expand)
+        self.full_head_mask = self._expand_for_beams(head_mask, num_expand)
 
         if not use_cbs:
             if num_beams > 1:
@@ -677,35 +877,144 @@ class BertForImageCaptioning(CaptionPreTrainedModel):
         else:
             assert self.num_keep_best == 1, 'not supported n_best > 1 for CBS'
             searcher = ConstrainedBeamSearch(eos_token_ids, max_length,
-                    num_beams, use_hypo=use_hypo)
+                    num_beams)
             curr_ids, sum_logprobs = searcher.search(
                     input_ids,
                     None,
                     self._decode_step,
                     fsm,
             )
-            curr_ids, sum_logprobs = select_best_beam_with_constraints(
+            curr_ids, logprobs = select_best_beam_with_constraints(
                 curr_ids,
                 sum_logprobs,
                 num_constraints,
                 min_constraints_to_satisfy,
+                eos_token_ids,
             )
             # (batch_size, n_best, max_len), (batch_size, n_best)
-            output = (curr_ids.unsqueeze(1), sum_logprobs.unsqueeze(1))
+            output = (curr_ids.unsqueeze(1), logprobs.unsqueeze(1))
 
         return output
 
-    def _expand_for_beams(self, x, num_beams, num_fsm_states):
-        num_expand = num_beams * num_fsm_states
+    def _expand_for_beams(self, x, num_expand):
         if x is None or num_expand == 1:
             return x
 
         input_shape = list(x.shape)
         expanded_shape = input_shape[:1] + [num_expand] + input_shape[1:]
         x = x.unsqueeze(1).expand(expanded_shape)
-        # (batch_size * num_beams, ...)
+        # (batch_size * num_expand, ...)
         x = x.contiguous().view([input_shape[0] * num_expand] + input_shape[1:])
         return x
 
     def _do_output_past(self, outputs):
         return len(outputs) > 1
+
+
+class BertPreTrainingHeads(nn.Module):
+    def __init__(self, config):
+        super(BertPreTrainingHeads, self).__init__()
+        self.predictions = BertLMPredictionHead(config)
+        num_seq_relations = config.num_contrast_classes if hasattr(config, "num_contrast_classes") else 2
+        self.seq_relationship = nn.Linear(config.hidden_size, num_seq_relations)
+
+    def forward(self, sequence_output, pooled_output):
+        prediction_scores = self.predictions(sequence_output)
+        seq_relationship_score = self.seq_relationship(pooled_output)
+        return prediction_scores, seq_relationship_score
+
+
+class BertImgForPreTraining(ImgPreTrainedModel):
+    r"""
+        **masked_lm_labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
+            Labels for computing the masked language modeling loss.
+            Indices should be in ``[-1, 0, ..., config.vocab_size]`` (see ``input_ids`` docstring)
+            Tokens with indices set to ``-1`` are ignored (masked), the loss is only computed for the tokens with labels
+            in ``[0, ..., config.vocab_size]``
+        **next_sentence_label**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
+            Labels for computing the next sequence prediction (classification) loss. Input should be a sequence pair (see ``input_ids`` docstring)
+            Indices should be in ``[0, 1]``.
+            ``0`` indicates sequence B is a continuation of sequence A,
+            ``1`` indicates sequence B is a random sequence.
+
+    Outputs: `Tuple` comprising various elements depending on the configuration (config) and inputs:
+        **loss**: (`optional`, returned when both ``masked_lm_labels`` and ``next_sentence_label`` are provided) ``torch.FloatTensor`` of shape ``(1,)``:
+            Total loss as the sum of the masked language modeling loss and the next sequence prediction (classification) loss.
+        **prediction_scores**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length, config.vocab_size)``
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        **seq_relationship_scores**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length, 2)``
+            Prediction scores of the next sequence prediction (classification) head (scores of True/False continuation before SoftMax).
+        **hidden_states**: (`optional`, returned when ``config.output_hidden_states=True``)
+            list of ``torch.FloatTensor`` (one for the output of each layer + the output of the embeddings)
+            of shape ``(batch_size, sequence_length, hidden_size)``:
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        **attentions**: (`optional`, returned when ``config.output_attentions=True``)
+            list of ``torch.FloatTensor`` (one for each layer) of shape ``(batch_size, num_heads, sequence_length, sequence_length)``:
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention heads.
+
+    Examples::
+
+        >>> config = BertConfig.from_pretrained('bert-base-uncased')
+        >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        >>>
+        >>> model = BertImgForPreTraining(config)
+        >>> input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1
+        >>> outputs = model(input_ids)
+        >>> prediction_scores, seq_relationship_scores = outputs[:2]
+
+    """
+    config_class = BertConfig
+    pretrained_model_archive_map = BERT_PRETRAINED_MODEL_ARCHIVE_MAP
+    load_tf_weights = load_tf_weights_in_bert
+    base_model_prefix = "bert"
+
+    def __init__(self, config):
+        super(BertImgForPreTraining, self).__init__(config)
+
+        #self.bert = BertModel(config) # original BERT
+        self.bert = BertImgModel(config)
+        self.cls = BertPreTrainingHeads(config)
+        self.num_seq_relations = config.num_contrast_classes if hasattr(config, "num_contrast_classes") else 2
+
+        self.apply(self.init_weights)
+        self.tie_weights()
+
+    def init_weights(self, module):
+        """ Initialize the weights.
+        """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            module.weight.data.normal_(mean=0.0,
+                                       std=self.config.initializer_range)
+        elif isinstance(module, BertLayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+
+    def tie_weights(self):
+        """ Make sure we are sharing the input and output embeddings.
+            Export to TorchScript can't handle parameter sharing so we are cloning them instead.
+        """
+        self._tie_or_clone_weights(self.cls.predictions.decoder,
+                                   self.bert.embeddings.word_embeddings)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None,
+            next_sentence_label=None, position_ids=None, head_mask=None, img_feats=None):
+        outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
+                            attention_mask=attention_mask, head_mask=head_mask, img_feats=img_feats)
+
+        sequence_output, pooled_output = outputs[:2]
+        prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
+
+        outputs = (prediction_scores, seq_relationship_score,) + outputs[2:]  # add hidden states and attention if they are here
+
+        if masked_lm_labels is not None and next_sentence_label is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            next_sentence_loss = loss_fct(seq_relationship_score.view(-1, self.num_seq_relations), next_sentence_label.view(-1))
+            total_loss = masked_lm_loss + next_sentence_loss
+            outputs = (total_loss,) + outputs + (masked_lm_loss,)
+
+        return outputs  # (loss), prediction_scores, seq_relationship_score, (hidden_states), (attentions)
