@@ -270,6 +270,150 @@ class NLVRProcessor(DataProcessor):
             examples.append(InputInstance(guid=guid, text_a=text_a, text_b=text_b, label=label, score=score, img_key=img_key, q_id=q_id))
         return examples
 
+class VCR_Q_A_Processor(DataProcessor):
+    """ Processor for the VCR (q -> a) (Det) data set. """
+
+    def get_train_examples(self, data_dir, file_name='vcr_train.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "train")
+
+    def get_dev_examples(self, data_dir, file_name='vcr_val.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "dev")
+
+    def get_test_examples(self, data_dir, file_name='vcr_test.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "test")
+
+    def get_labels(self, label_file=None):
+        """ See base class."""
+
+        #ans2label = cPickle.load(open(label_file, 'rb'))
+        #return list(ans2label.values())
+        return [0, 1]
+
+    def _create_examples(self, lines, set_type):
+        """ Creates examples for the training and dev sets. """
+
+        examples = []
+        for (i, line) in enumerate(lines):
+            #if set_type!='test': continue
+
+            guid = "%s-%s" % (set_type, str(i))
+            text_a = line['q'] # question
+            choices = line['choices']
+            label = None if set_type.startswith('test') else line['label']
+            img_key = line['img_id']
+            q_id = int(line['annot_id'].split('-')[-1]) #int(line['q_id']) if set_type.startswith('test') else 0
+            score = line['objects'] if 'objects' in line else None
+            examples.append(InputInstance(guid=guid, text_a=text_a, text_b=choices, label=label, score=score, img_key=img_key, q_id=q_id))
+        return examples
+
+class VCR_QA_R_Processor(DataProcessor):
+    """ Processor for the VCR (qa -> r) QA_R data set. """
+
+    def get_train_examples(self, data_dir, file_name='vcr_train.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "train")
+
+    def get_dev_examples(self, data_dir, file_name='vcr_val.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "dev")
+
+    def get_test_examples(self, data_dir, file_name='vcr_test.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "test")
+
+    def get_labels(self, label_file=None):
+        """ See base class."""
+
+        #ans2label = cPickle.load(open(label_file, 'rb'))
+        #return list(ans2label.values())
+        return [0, 1]
+
+    def _create_examples(self, lines, set_type):
+        """ Creates examples for the training and dev sets. """
+
+        examples = []
+        for (i, line) in enumerate(lines):
+            #if set_type!='test': continue
+
+            guid = "%s-%s" % (set_type, str(i))
+            text_a = line['q'] + ' ' + line['choices'][line['label']] # question_choice
+            choices = line['rational_choices'] # rational_choice
+            label = None if set_type.startswith('test') else line['rational_label'] # rational_label
+            img_key = line['img_id']
+            q_id = int(line['annot_id'].split('-')[-1]) #int(line['q_id']) if set_type.startswith('test') else 0
+            examples.append(InputInstance(guid=guid, text_a=text_a, text_b=choices, label=label, score=None, img_key=img_key, q_id=q_id))
+        return examples
+
+class VCR_QAR_Processor(DataProcessor):
+    """ Processor for the VCR (q->a, qa->r) data set. """
+
+    def get_train_examples(self, data_dir, file_name='vcr_train.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "train")
+
+    def get_dev_examples(self, data_dir, file_name='vcr_val.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "dev")
+
+    def get_test_examples(self, data_dir, file_name='vcr_test.json'):
+        """ See base class."""
+
+        lines = json.load(open(os.path.join(data_dir, file_name)))
+        return self._create_examples(lines, "test")
+
+    def get_labels(self, label_file=None):
+        """ See base class."""
+
+        #ans2label = cPickle.load(open(label_file, 'rb'))
+        #return list(ans2label.values())
+        return [0, 1]
+
+    def _create_examples(self, lines, set_type):
+        """ Creates examples for the training and dev sets. """
+
+        examples = []
+        for (i, line) in enumerate(lines):
+            #if set_type!='test': continue
+
+            guid = "%s-%s-q-a" % (set_type, str(i))
+            text_a = line['q'] # question
+            choices = line['choices']
+            label = None if set_type.startswith('test') else line['label']
+            img_key = line['img_id']
+            q_id = int(line['annot_id'].split('-')[-1]) #int(line['q_id']) if set_type.startswith('test') else 0
+            score = line['objects'] if 'objects' in line else None
+            examples.append(InputInstance(guid=guid, text_a=text_a, text_b=choices, label=label, score=score, img_key=img_key, q_id=q_id))
+
+            if set_type == 'train': # qa -> r
+                guid = "%s-%s-qa-r" % (set_type, str(i))
+                text_a = line['q'] + ' ' + line['choices'][line['label']] # question_choice
+                choices = line['rational_choices'] # rational_choice
+                label = None if set_type.startswith('test') else line['rational_label'] # rational_label
+                img_key = line['img_id']
+                q_id = int(line['annot_id'].split('-')[-1]) # int(line['q_id']) if set_type.startswith('test') else 0
+                score = line['objects'] if 'objects' in line else None
+                examples.append(InputInstance(guid=guid, text_a=text_a, text_b=choices, label=label, score=score, img_key=img_key, q_id=q_id))
+        return examples
+
 
 def convert_examples_to_features_vqa(examples, img_feats, label_list, max_img_seq_length, max_seq_length,
                                  tokenizer, output_mode,
@@ -424,19 +568,28 @@ processors = {
     "vqa_text": VQATextProcessor,
     "vqa_text_a": VQATextAProcessor,
     "gqa": GQAProcessor,
-    "nlvr": NLVRProcessor
+    "nlvr": NLVRProcessor,
+    "vcr_q_a": VCR_Q_A_Processor,
+    "vcr_qa_r": VCR_QA_R_Processor,
+    "vcr_qar": VCR_QAR_Processor,
 }
 
 output_modes = {
     "vqa_text": "classification",
     "vqa_text_a": "classification",
     "gqa": "classification",
-    "nlvr": "classification"
+    "nlvr": "classification",
+    "vcr_q_a": "classification",
+    "vcr_qa_r": "classification",
+    "vcr_qar": "classification",
 }
 
 GLUE_TASKS_NUM_LABELS = {
     "vqa_text": 3129,
     "vqa_text_a": 3129,
     "gqa": 1853,
-    "nlvr": 2
+    "nlvr": 2,
+    "vcr_q_a": 2,
+    "vcr_qa_r": 2,
+    "vcr_qar": 2,
 }

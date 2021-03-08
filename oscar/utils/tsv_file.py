@@ -5,7 +5,7 @@ import os
 import os.path as op
 
 
-def generate_lineidx(filein, idxout):
+def generate_lineidx_file(filein, idxout):
     idxout_tmp = idxout + '.tmp'
     with open(filein, 'r') as tsvin, open(idxout_tmp,'w') as tsvout:
         fsize = os.fstat(tsvin.fileno()).st_size
@@ -28,7 +28,7 @@ class TSVFile(object):
         self.pid = None
         # generate lineidx if not exist
         if not op.isfile(self.lineidx) and generate_lineidx:
-            generate_lineidx(self.tsv_file, self.lineidx)
+            generate_lineidx_file(self.tsv_file, self.lineidx)
 
     def __del__(self):
         if self._fp:

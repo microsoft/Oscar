@@ -7,6 +7,7 @@ import yaml
 import random
 import torch
 import numpy as np
+import torch.distributed as dist
 
 
 def mkdir(path):
@@ -44,3 +45,22 @@ def find_file_path_in_yaml(fname, root):
                 errno.ENOENT, os.strerror(errno.ENOENT), op.join(root, fname)
             )
 
+
+def get_rank():
+    if not dist.is_available():
+        return 0
+    if not dist.is_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_main_process():
+    return get_rank() == 0
+
+
+def get_world_size():
+    if not dist.is_available():
+        return 1
+    if not dist.is_initialized():
+        return 1
+    return dist.get_world_size()

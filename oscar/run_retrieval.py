@@ -3,6 +3,7 @@
 from __future__ import absolute_import, division, print_function
 import argparse
 import os
+import base64
 import os.path as op
 import random, json
 import numpy as np
@@ -11,6 +12,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 
+from oscar.utils.tsv_file import TSVFile
 from oscar.utils.logger import setup_logger
 from oscar.utils.misc import mkdir, set_seed
 from oscar.modeling.modeling_bert import ImageBertForSequenceClassification
@@ -31,19 +33,41 @@ class RetrievalDataset(Dataset):
 
         """
         super(RetrievalDataset, self).__init__()
-        feature_file = op.join(args.data_dir, '{}_img_{}_feats.pt'.format(split, args.img_feature_type))
+        self.img_file = args.img_feat_file
         caption_file = op.join(args.data_dir, '{}_captions.pt'.format(split))
-        self.features = torch.load(feature_file)
+        self.img_tsv = TSVFile(self.img_file)
         self.captions = torch.load(caption_file)
-        self.img_keys = list(self.features.keys())
+        self.img_keys = list(self.captions.keys())  # img_id as int
         if not type(self.captions[self.img_keys[0]]) == list:
             self.captions = {k: json.loads(self.captions[k]) for k in self.img_keys}
-        assert len(self.features) == len(self.captions), \
-               "the length of image features and captions does not match!"
+
+        # get the image image_id to index map
+        imgid2idx_file = op.join(op.dirname(self.img_file), 'imageid2idx.json')
+        self.image_id2idx = json.load(open(imgid2idx_file))  # img_id as string
         
         if args.add_od_labels:
-            label_file = op.join(args.data_dir, '{}_{}_labels.pt'.format(split, args.od_label_type))
-            self.labels = torch.load(label_file)
+            label_data_dir = op.dirname(self.img_file)
+            label_file = os.path.join(label_data_dir, "predictions.tsv")
+            self.label_tsv = TSVFile(label_file)
+            self.labels = {}
+            for line_no in range(self.label_tsv.num_rows()):
+                row = self.label_tsv.seek(line_no)
+                image_id = row[0]
+                if int(image_id) in self.img_keys:
+                    results = json.loads(row[1])
+                    objects = results['objects'] if type(
+                        results) == dict else results
+                    self.labels[int(image_id)] = {
+                        "image_h": results["image_h"] if type(
+                            results) == dict else 600,
+                        "image_w": results["image_w"] if type(
+                            results) == dict else 800,
+                        "class": [cur_d['class'] for cur_d in objects],
+                        "boxes": np.array([cur_d['rect'] for cur_d in objects],
+                                          dtype=np.float32)
+                    }
+            self.label_tsv._fp.close()
+            self.label_tsv._fp = None
 
         if is_train:
             self.num_captions_per_img = args.num_captions_per_img_train
@@ -55,7 +79,6 @@ class RetrievalDataset(Dataset):
                 with open(op.join(args.data_dir, args.eval_img_keys_file), 'r') as f:
                     img_keys = f.readlines()
                 self.img_keys = [int(k.strip()) for k in img_keys]
-                self.features = {k: self.features[k] for k in self.img_keys}
                 self.captions = {k: self.captions[k] for k in self.img_keys}
                 if args.add_od_labels:
                     self.labels = {k: self.labels[k] for k in self.img_keys}
@@ -105,7 +128,7 @@ class RetrievalDataset(Dataset):
             if type(self.labels[img_key]) == str:
                 od_labels = self.labels[img_key]
             else:
-                od_labels = ' '.join([l['class'] for l in self.labels[img_key]])
+                od_labels = ' '.join(self.labels[img_key]['class'])
             return od_labels
 
     def tensorize_example(self, text_a, img_feat, text_b=None, 
@@ -179,7 +202,7 @@ class RetrievalDataset(Dataset):
         if self.is_train:
             img_idx, cap_idxs = self.get_image_caption_index(index)
             img_key = self.img_keys[img_idx]
-            feature = self.features[img_key]
+            feature = self.get_image(img_key)
             caption = self.captions[cap_idxs[0]][cap_idxs[1]]
             od_labels = self.get_od_labels(img_key)
             example = self.tensorize_example(caption, feature, text_b=od_labels)
@@ -194,7 +217,7 @@ class RetrievalDataset(Dataset):
                 example_neg = self.tensorize_example(caption_neg, feature, text_b=od_labels)
             else:
                 # randomly select a negative image 
-                feature_neg = self.features[self.img_keys[img_idx_neg]]
+                feature_neg = self.get_image(self.img_keys[img_idx_neg])
                 od_labels_neg = self.get_od_labels(self.img_keys[img_idx_neg])
                 example_neg = self.tensorize_example(caption, feature_neg, text_b=od_labels_neg)
 
@@ -203,12 +226,21 @@ class RetrievalDataset(Dataset):
         else:
             img_idx, cap_idxs = self.get_image_caption_index(index)
             img_key = self.img_keys[img_idx]
-            feature = self.features[img_key]
+            feature = self.get_image(img_key)
             caption = self.captions[cap_idxs[0]][cap_idxs[1]]
             od_labels = self.get_od_labels(img_key)
             example = self.tensorize_example(caption, feature, text_b=od_labels)
             label = 1 if img_key == cap_idxs[0] else 0
             return index, tuple(list(example) + [label])
+
+    def get_image(self, image_id):
+        image_idx = self.image_id2idx[str(image_id)]
+        row = self.img_tsv.seek(image_idx)
+        num_boxes = int(row[1])
+        features = np.frombuffer(base64.b64decode(row[-1]),
+                                 dtype=np.float32).reshape((num_boxes, -1))
+        t_features = torch.from_numpy(features)
+        return t_features
 
     def __len__(self):
         if not self.is_train and self.args.cross_image_eval:
@@ -446,7 +478,8 @@ def restore_training_settings(args):
     assert not args.do_train and (args.do_test or args.do_eval)
     train_args = torch.load(op.join(args.eval_model_dir, 'training_args.bin'))
     override_params = ['do_lower_case', 'img_feature_type', 'max_seq_length', 
-            'max_img_seq_length', 'add_od_labels', 'od_label_type']
+            'max_img_seq_length', 'add_od_labels', 'od_label_type',
+            'use_img_layernorm', 'img_layer_norm_eps']
     for param in override_params:
         if hasattr(train_args, param):
             train_v = getattr(train_args, param)
@@ -462,6 +495,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default='datasets/coco_ir', type=str, required=False,
                         help="The input data dir with all required files.")
+    parser.add_argument("--img_feat_file", default='datasets/coco_ir/features.tsv', type=str, required=False,
+                        help="The absolute address of the image feature file.")
     parser.add_argument("--model_name_or_path", default=None, type=str, required=False,
                         help="Path to pre-trained model or model type. required for training.")
     parser.add_argument("--output_dir", default='output/', type=str, required=False,
@@ -511,6 +546,10 @@ def main():
                         help="The Image Feature Dimension.")
     parser.add_argument("--img_feature_type", default='frcnn', type=str,
                         help="Image feature type.")
+    parser.add_argument("--use_img_layernorm", type=int, default=1,
+                        help="Normalize image features with bertlayernorm")
+    parser.add_argument("--img_layer_norm_eps", default=1e-12, type=float,
+                        help="The eps in image feature laynorm layer")
     parser.add_argument("--per_gpu_train_batch_size", default=32, type=int, 
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int, 
@@ -568,6 +607,8 @@ def main():
         config.img_feature_type = args.img_feature_type
         config.hidden_dropout_prob = args.drop_out
         config.loss_type = args.loss_type
+        config.img_layer_norm_eps = args.img_layer_norm_eps
+        config.use_img_layernorm = args.use_img_layernorm
         model = model_class.from_pretrained(args.model_name_or_path, 
             from_tf=bool('.ckpt' in args.model_name_or_path), config=config)
     else:
