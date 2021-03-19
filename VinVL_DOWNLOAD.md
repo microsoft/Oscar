@@ -27,7 +27,7 @@ Features are stored in tsv (tab-separated-values) format that can be used in [pr
 
 Notice that all the links below are links to a folder. We recommend using the following AzCopy command to download.
 ```
-path/to/azcopy copy <folder-link> <target-address> --recursive"
+path/to/azcopy copy <folder-link> <target-address> --recursive
 ```
 
 [COCO 2014 Train/Val Image Features (~50G)](https://biglmdiag.blob.core.windows.net/vinvl/image_features/coco_X152C4_frcnnbig2_exp168model_0060000model.roi_heads.nm_filter_2_model.roi_heads.score_thresh_0.2/model_0060000/)
