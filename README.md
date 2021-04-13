@@ -5,6 +5,7 @@
 05/15/2020: Released pretrained models, datasets, and code for downstream tasks finetuning. <br/>
 01/13/2021: our new work [VinVL](https://arxiv.org/abs/2101.00529) proposed OSCAR+, an improved version of OSCAR, and provided a better object-attribute detection model to extract features for V+L tasks. The VinVL work achieved SOTA performance on all seven V+L tasks here. Please stay tuned for the model and code release. <br/>
 03/08/2021: Oscar+ pretraining code released, please check the last section in [VinVL_MODEL_ZOO.md](VinVL_MODEL_ZOO.md). All image features and model checkpoints in VinVL are also released. Please check [VinVL](https://github.com/pzzhang/VinVL) for details. <br/>
+04/13/2021: Our [Scene Graph Benchmark Repo](https://github.com/microsoft/scene_graph_benchmark) has been released. Welcome to use the code there to extract image features with VinVL pretrained models. <br/>
 
 
 ## Introduction
