@@ -32,6 +32,7 @@ gain    | 1.3 |  0.7| 1.9 |  0.6| -0.7| 0.5 | 0.9  | 0.7  |    5.9 |  0.7   |   
 
 t2i: text-to-image retrieval; i2t: image-to-text retrieval; IC: image captioning on COCO. 
 
+R: ROUGE-L; B: BLEU@N; M: METEOR; C: CIDEr-D; S:SPICE.
 
 ## Download
 We released pre-trained models, datasets, VinVL image features, and Oscar+ pretraining corpus for downstream tasks. 
