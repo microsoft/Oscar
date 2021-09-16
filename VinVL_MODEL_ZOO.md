@@ -236,7 +236,7 @@ Finetuned model checkpoint (w/ CIDEr optimization): [coco_captioning_base_scst.z
 1) First train with cross-entropy loss (8 V100 with 16G mem):
 ```bash
 python oscar/run_captioning.py \
-    --model_name_or_path pretrained_models/image_captioning/pretrained_base \
+    --model_name_or_path pretrained_models/image_captioning/pretrained_base/checkpoint-2000000 \
     --do_train \
     --do_lower_case \
     --add_od_labels \
@@ -275,7 +275,7 @@ Finetuned model checkpoint (w/ CIDEr optimization): [coco_captioning_large_scst.
 1) First train with cross-entropy loss (8 V100 with 32G mem):
 ```bash
 python oscar/run_captioning.py \
-    --model_name_or_path pretrained_models/image_captioning/pretrained_large \
+    --model_name_or_path pretrained_models/image_captioning/pretrained_large/checkpoint-1410000 \
     --do_train \
     --do_lower_case \
     --add_od_labels \
