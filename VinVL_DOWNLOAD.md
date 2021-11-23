@@ -12,7 +12,7 @@ We provide pre-trained *Oscar+* models of Bert-base and Bert-large structures, w
 ```bash
 path/to/azcopy copy 'https://biglmdiag.blob.core.windows.net/vinvl/model_ckpts/TASK_NAME' <target folder> --recursive
 ```
-`TASK_NAME` could be `coco_caption`, `nocaps`, `coco_ir`, `vqa`, `gqa`, `nlvr2`, `od_models`.
+`TASK_NAME` could be `image_captioning` (including `nocaps`), `coco_ir`, `vqa`, `gqa`, `nlvr2`, `od_models`.
 
 The models are trained with both image region features and object tags. The image region features are extracted by the Faster R-CNN with
 ResNet-101, using object and attribute annotations from [Visual Genome](http://visualgenome.org/).
