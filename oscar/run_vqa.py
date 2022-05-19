@@ -591,8 +591,6 @@ def train(args, train_dataset, eval_dataset, model, tokenizer):
                 global_step += 1
 
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:# Log metrics
-                    if args.local_rank not in [-1, 0]:
-                        torch.distributed.barrier()
 
                     if args.local_rank in [-1, 0] and args.evaluate_during_training:
                     #if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
@@ -607,8 +605,10 @@ def train(args, train_dataset, eval_dataset, model, tokenizer):
 
                     if args.local_rank == 0:
                         torch.distributed.barrier()
-
                     logging_loss = tr_loss
+                    
+                if args.local_rank not in [-1, 0]:
+                    torch.distributed.barrier()
 
             #if args.max_steps > 0 and global_step > args.max_steps:
             #    epoch_iterator.close()
