@@ -1,3 +1,8 @@
+Note:  The data is on Azure Storage Blob, a SAS with Read permission is provided. Please append the following SAS at the end of each link to download: 
+```bash
+?sp=r&st=2023-08-28T01:12:41Z&se=3023-08-28T09:12:41Z&sv=2022-11-02&sr=c&sig=6R1YmWluiXmPLsdVn1rDUpeBp2SYBMxDjc6KoKNlY8Q%3D
+```
+
 ## Table of Contents
 - <a href='#VQA'>VQA</a>
 - <a href='#GQA'>GQA</a>
